@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nothing Twice</title>
+<style>
+:root{--paper:#efe7d6;--ink:#221e1a;--cobalt:#2448c8;--verm:#d23c1e;--gold:#b07c14;--steel:#34506a;--muted:#7a6d5c}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#e4dac5;color-scheme:light;color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;overflow:hidden}
+#wrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 8px}
+#top{width:100%;max-width:900px;display:flex;align-items:baseline;gap:10px;padding:2px 4px 6px;min-height:30px}
+#lvname{font-size:17px;letter-spacing:.02em;white-space:nowrap}
+#lvname small{color:var(--muted);font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin-right:6px}
+#btns{margin-left:auto;display:flex;gap:6px}
+button{font:inherit;font-size:13px;background:transparent;border:1px solid #b9ab92;color:var(--ink);border-radius:14px;padding:3px 10px;cursor:pointer}
+button:hover{background:#f6f0e3}
+#stage{position:relative;line-height:0}
+canvas{display:block;border-radius:6px;box-shadow:0 1px 0 #fff8 inset,0 6px 24px #4a3a2026;cursor:none;touch-action:none}
+#hint{width:100%;max-width:900px;min-height:42px;padding:8px 6px 0;font-size:15px;line-height:1.35;text-align:center;color:#3a332b}
+#hint b{font-weight:600}
+#hint .y{color:var(--cobalt)} #hint .e{color:var(--verm)} #hint .g{color:var(--gold)} #hint .s{color:var(--steel)}
+#msg{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:#221e1aee;color:#f3ead8;font-size:14px;padding:6px 14px;border-radius:16px;opacity:0;transition:opacity .25s;pointer-events:none;line-height:1.3;white-space:nowrap}
+#card{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#efe7d6f2;border-radius:6px;text-align:center;padding:20px;line-height:1.45}
+#card.hide{display:none}
+#card h1{font-weight:400;font-size:40px;margin:0 0 4px;letter-spacing:.04em}
+#card h2{font-weight:400;font-size:24px;margin:0 0 6px}
+#card .k{color:var(--muted);font-size:12px;letter-spacing:.18em;text-transform:uppercase}
+#card p{max-width:520px;margin:8px auto;font-size:16px}
+#card button{font-size:16px;padding:6px 20px;margin-top:10px;border-color:#221e1a}
+#lvlist{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:520px;margin:10px auto}
+#lvlist button{min-width:44px}
+#lvlist button.done{background:#221e1a;color:#efe7d6}
+#pad{display:none;position:absolute;right:10px;bottom:10px;width:120px;height:120px}
+#pad button{position:absolute;width:40px;height:40px;border-radius:50%;background:#efe7d6cc;font-size:16px;padding:0}
+.touch #pad{display:block}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="top"><div id="lvname"></div><div id="btns"><button id="bUndo" title="Undo (Z)">↶ Undo</button><button id="bReset" title="Restart (R)">⟲ Restart</button><button id="bMenu">Levels</button></div></div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="msg"></div>
+    <div id="card"></div>
+    <div id="pad"><button data-d="0,-1" style="left:40px;top:0">▲</button><button data-d="-1,0" style="left:0;top:40px">◀</button><button data-d="1,0" style="left:80px;top:40px">▶</button><button data-d="0,1" style="left:40px;top:80px">▼</button></div>
+  </div>
+  <div id="hint"></div>
+</div>
+<script>
+"use strict";
+// ───────────────────────── LEVELS ─────────────────────────
+// # wall  . floor  _ abyss  = plank over abyss  o stone  @ you
+// D / A / E : stones that currently carry the Door / Anchor / Eye shape
+const CHAPTERS=[
+ {k:"Part one",t:"Nothing in two minds",p:"A thing can only be <b>noticed by one mind at a time</b>. For every other mind, it simply isn't there."},
+ {k:"Part two",t:"Nothing in two places",p:"Every shape exists <b>only once</b>. Make a copy of a shape and it isn't a copy: the shape <b>moves</b> into it, and the old one is left as plain stones."},
+ {k:"Part three",t:"The Eye is a shape",p:"Look closely at the Eye. It's four stones in a T. And there is only one of every shape…"},
+];
+const LEVELS=[
+{ch:0,name:"Theirs",hint:`The <b class=e>Eye</b> is looking at that wall, so it belongs to the Eye — and <b>isn't there for you</b>. Walk to the <b class=g>Door</b>.`,
+ tip:"Careful where you point. If you look at the wall, it's yours again.",
+ map:["##############",
+      "#####EEE######",
+      "######E#######",
+      "#@....#....DD#",
+      "###########DD#",
+      "##############"]},
+{ch:0,name:"Yours",hint:`Whatever <b class=y>you</b> look at is <b class=y>yours</b> — so it isn't there for the Eye. It sees right past it.`,
+ tip:"Keep looking while you walk.",
+ map:["##############",
+      "#E############",
+      "#EE...#...#DD#",
+      "#E.@......#DD#",
+      "##........####",
+      "##############"]},
+{ch:0,name:"Planks",hint:`If the Eye is looking at a plank, the plank isn't there for you. You can only look in one direction.`,
+ tip:"Think about the order you do things in.",
+ map:["############",
+      "###..._.####",
+      "#E#.@._.####",
+      "#EE.#.=.#DD#",
+      "#E####_##DD#",
+      "######_#####",
+      "############"]},
+{ch:1,name:"Only once",hint:`There is only one <b class=g>Door</b> in the world. Build a 2×2 of stones and the Door <b>moves</b> into them.`,
+ tip:"Push stones by walking into them.",
+ map:["##############",
+      "#......#######",
+      "#.@....#######",
+      "#..oo..###DD##",
+      "#..o.o.###DD##",
+      "#......#######",
+      "##############"]},
+{ch:1,name:"Anchor",hint:`Three in a row is the <b class=s>Anchor</b>. Anchored stones can't be pushed. There is only one Anchor.`,
+ tip:"",
+ map:["#############",
+      "#.....#.....#",
+      "#.@...A...DD#",
+      "#..o..A...DD#",
+      "#.o.o.A.....#",
+      "#.....#.....#",
+      "#############"]},
+{ch:1,name:"Fussy",hint:`A shape is exactly its stones. Add one more and it's a different shape — the old shape goes back to the <b>newest</b> copy left.`,
+ tip:"That sealed row of three at the top is an older copy of the Anchor.",
+ map:["##############",
+      "#......#ooo###",
+      "#.AAA..#######",
+      "#......#######",
+      "#.@..o.###DD##",
+      "#......###DD##",
+      "##############"]},
+{ch:2,name:"Aim",hint:`The <b class=e>Eye</b> is four stones in a T, and there's only one Eye. Build a T and the Eye moves into it, looking out of the point.`,
+ tip:"",
+ map:["############",
+      "#EEE########",
+      "##E#########",
+      "#@....#..DD#",
+      "#.o.o.#..DD#",
+      "#.o...#....#",
+      "#.o...#....#",
+      "############"]},
+{ch:2,name:"Guard",hint:`The Eye is guarding the bridge, and you can't look at your own feet. There's only one Eye.`,
+ tip:"",
+ map:["##############",
+      "#E#####_######",
+      "#EE....=..####",
+      "#E#@.o._..####",
+      "###.o.._..#DD#",
+      "###.o.._..#DD#",
+      "###.o.._..####",
+      "##############"]},
+{ch:2,name:"Past",hint:`Everything at once: an Eye you built, a pillar in its way, and a wall you need it to see.`,
+ tip:"",
+ map:["##################",
+      "#E#####_##########",
+      "#EE....=.....#####",
+      "#E#@.o._.....#####",
+      "###.o.._.....#####",
+      "###.o.._..#..#.DD#",
+      "###.o.._.....##DD#",
+      "#######_##########",
+      "##################"]},
+];
+
+// ───────────────────────── CORE ─────────────────────────
+const FLOOR=0,ABYSS=1;
+const SHAPE_OF={door:"O4",anchor:"I3",eye:"T4"};
+function canon(cells){
+  const tf=[(x,y)=>[x,y],(x,y)=>[-y,x],(x,y)=>[-x,-y],(x,y)=>[y,-x],(x,y)=>[-x,y],(x,y)=>[y,x],(x,y)=>[x,-y],(x,y)=>[-y,-x]];
+  let best=null;
+  for(const f of tf){const p=cells.map(([x,y])=>f(x,y));let mx=1e9,my=1e9;for(const q of p){mx=Math.min(mx,q[0]);my=Math.min(my,q[1]);}
+    const s=p.map(([x,y])=>(x-mx)+","+(y-my)).sort().join(";");if(best===null||s<best)best=s;}
+  return best;
+}
+const CANON={I3:canon([[0,0],[1,0],[2,0]]),O4:canon([[0,0],[1,0],[0,1],[1,1]]),T4:canon([[0,0],[1,0],[2,0],[1,1]])};
+
+let S=null; // state
+let levelIndex=0, nextId=1;
+const solved=new Set(JSON.parse((()=>{try{return localStorage.getItem("nt_solved")||"[]"}catch(e){return "[]"}})()));
+function saveSolved(){try{localStorage.setItem("nt_solved",JSON.stringify([...solved]))}catch(e){}}
+
+function loadLevel(i){
+  levelIndex=i;const L=LEVELS[i];
+  const h=L.map.length,w=Math.max(...L.map.map(r=>r.length));
+  const terr=new Uint8Array(w*h),things=new Array(w*h).fill(null);
+  const hostCells={door:[],anchor:[],eye:[]};let px=1,py=1;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const c=L.map[y][x]||"#",i2=y*w+x;
+    if(c==="#")things[i2]={id:nextId++,t:"wall"};
+    else if(c==="_")terr[i2]=ABYSS;
+    else if(c==="="){terr[i2]=ABYSS;things[i2]={id:nextId++,t:"plank"};}
+    else if("oDAE".includes(c)){things[i2]={id:nextId++,t:"stone"};
+      if(c==="D")hostCells.door.push(i2);if(c==="A")hostCells.anchor.push(i2);if(c==="E")hostCells.eye.push(i2);}
+    else if(c==="@"){px=x;py=y;}
+  }
+  S={w,h,terr,things,px,py,stamps:new Map(),counter:1,forms:{},present:Object.keys(hostCells).filter(k=>hostCells[k].length),
+     undo:[],dead:null,won:false,anim:{px,py},stoneAnim:new Map(),falls:[],pointer:null,gaze:[],beam:null,owner:new Map(),flash:0,ripples:[],moves:0};
+  // initial stamps
+  for(const cl of clusters()){const key=cl.join(",");const host=Object.values(hostCells).some(a=>a.some(c=>cl.includes(c)));S.stamps.set(key,host?1:0);}
+  computeForms();
+  resolveGaze();
+  buildFilings();
+  renderBackground();
+  updateHud();
+}
+const idx=(x,y)=>y*S.w+x;
+const inb=(x,y)=>x>=0&&y>=0&&x<S.w&&y<S.h;
+function isStone(i){const t=S.things[i];return t&&t.t==="stone";}
+function clusters(){
+  const seen=new Uint8Array(S.w*S.h),out=[];
+  for(let i=0;i<S.w*S.h;i++){if(seen[i]||!isStone(i))continue;
+    const st=[i],cl=[];seen[i]=1;
+    while(st.length){const c=st.pop();cl.push(c);const x=c%S.w,y=(c/S.w)|0;
+      for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(!inb(nx,ny))continue;const n=idx(nx,ny);if(!seen[n]&&isStone(n)){seen[n]=1;st.push(n);}}}
+    cl.sort((a,b)=>a-b);out.push(cl);}
+  return out;
+}
+function restamp(){
+  const ns=new Map();
+  for(const cl of clusters()){const key=cl.join(",");ns.set(key,S.stamps.has(key)?S.stamps.get(key):++S.counter);}
+  S.stamps=ns;
+}
+function computeForms(){
+  const prev=S.forms||{};const forms={};const cellForm=new Map();
+  const cls=clusters();
+  for(const type of S.present){
+    let best=null,bs=-1;
+    for(const cl of cls){const cells=cl.map(c=>[c%S.w,(c/S.w)|0]);if(canon(cells)!==CANON[SHAPE_OF[type]])continue;
+      const st=S.stamps.get(cl.join(","))??0;if(st>bs){bs=st;best=cl;}}
+    if(best){forms[type]={cells:best};for(const c of best)cellForm.set(c,type);
+      if(type==="eye"){ // find nose
+        const set=new Set(best);let center=null;
+        for(const c of best){const x=c%S.w,y=(c/S.w)|0;let n=0;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]])if(set.has(idx(x+dx,y+dy)))n++;if(n===3)center=c;}
+        const cx=center%S.w,cy=(center/S.w)|0;
+        for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){if(set.has(idx(cx+dx,cy+dy))&&!set.has(idx(cx-dx,cy-dy))){forms.eye.nose=idx(cx+dx,cy+dy);forms.eye.dir=[dx,dy];}}
+      }}
+  }
+  // detect moves for effects
+  for(const type of S.present){const a=prev[type]&&prev[type].cells.join(","),b=forms[type]&&forms[type].cells.join(",");
+    if(prev[type]!==undefined&&a!==b&&forms[type]){S.ripples.push({type,cells:forms[type].cells,from:prev[type]?prev[type].cells:null,t:0});sfx("form",type);}}
+  S.forms=forms;S.cellForm=cellForm;
+}
+const formAt=i=>S.cellForm.get(i);
+// does a thing block passage/sight (for whoever it exists for)?
+function blocks(i){const t=S.things[i];if(!t)return false;if(t.t==="wall")return true;if(t.t==="stone")return formAt(i)!=="door";return false;}
+function existsFor(i,who){const t=S.things[i];if(!t)return false;const o=S.owner.get(t.id);return !o||o===who;}
+
+// gaze: your ray goes toward the pointer and takes everything it touches, up to the first solid thing.
+function yourRay(){
+  const out=[];if(!S.pointer)return out;
+  const ox=S.px+.5,oy=S.py+.5;let dx=S.pointer.x-ox,dy=S.pointer.y-oy;const d=Math.hypot(dx,dy);
+  const pc=inb(Math.floor(S.pointer.x),Math.floor(S.pointer.y))?idx(Math.floor(S.pointer.x),Math.floor(S.pointer.y)):-1;
+  const own=idx(S.px,S.py);
+  if(pc===own){S.gazeEnd={x:S.pointer.x,y:S.pointer.y};return out;}
+  dx/=d;dy/=d;let last=own,end=d;
+  for(let t=0;t<=d+1e-6;t+=0.03){const x=Math.floor(ox+dx*t),y=Math.floor(oy+dy*t);if(!inb(x,y)){end=t;break;}const c=idx(x,y);if(c===last)continue;last=c;
+    if(S.things[c]){out.push(c);if(blocks(c)){end=Math.min(d,rayExit(ox,oy,dx,dy,x,y));break;}}}
+  S.gazeEnd={x:ox+dx*end,y:oy+dy*end};
+  return out;
+}
+function rayExit(ox,oy,dx,dy,x,y){ // distance to center-ish of blocking cell
+  const cx=x+.5,cy=y+.5;return Math.max(0,(cx-ox)*dx+(cy-oy)*dy);}
+function eyeBeam(yours){
+  const out=[];const E=S.forms.eye;if(!E){S.beam=null;return out;}
+  const[dx,dy]=E.dir;let x=E.nose%S.w,y=(E.nose/S.w)|0;const sx=x,sy=y;
+  while(true){x+=dx;y+=dy;if(!inb(x,y))break;const c=idx(x,y);const t=S.things[c];
+    if(t&&!yours.has(t.id)){out.push(c);if(blocks(c))break;}}
+  S.beam={sx,sy,ex:x,ey:y,dir:E.dir};
+  return out;
+}
+function resolveGaze(){
+  const mine=yourRay();const yours=new Set(mine.map(c=>S.things[c].id));
+  const theirs=eyeBeam(yours);
+  const own=new Map();for(const id of yours)own.set(id,"you");for(const c of theirs){const id=S.things[c].id;if(!own.has(id))own.set(id,"eye");}
+  // sound on changes
+  let gained=0;for(const[id,o]of own)if(S.owner.get(id)!==o)gained++;
+  if(gained&&S.owner.size+own.size>0)sfx("claim");
+  S.owner=own;S.gaze=mine;
+}
+
+// ───────────────────────── RULES / MOVES ─────────────────────────
+function snapshot(){return{things:S.things.map(t=>t&&{id:t.id,t:t.t}),px:S.px,py:S.py,stamps:new Map(S.stamps),counter:S.counter};}
+function restore(s){S.things=s.things;S.px=s.px;S.py=s.py;S.stamps=s.stamps;S.counter=s.counter;S.forms={...S.forms};computeFormsQuiet();S.anim.px=S.px;S.anim.py=S.py;S.stoneAnim.clear();}
+function computeFormsQuiet(){const r=S.ripples.length;computeForms();S.ripples.length=r;}
+let busyUntil=0;
+function tryMove(dx,dy){
+  if(!S||S.dead||S.won)return;
+  const nx=S.px+dx,ny=S.py+dy;if(!inb(nx,ny))return;
+  const i=idx(nx,ny),th=S.things[i];const snap=snapshot();
+  if(th&&existsFor(i,"you")){
+    if(th.t==="wall"){bump(dx,dy);return;}
+    if(th.t==="stone"){const f=formAt(i);
+      if(f==="anchor"||f==="eye"){bump(dx,dy);say(f==="anchor"?"Anchored. It won't budge.":"The Eye won't budge.");return;}
+      if(f!=="door"){const bx=nx+dx,by=ny+dy;if(!inb(bx,by)){bump(dx,dy);return;}const j=idx(bx,by);
+        if(S.things[j]){bump(dx,dy);return;}
+        S.stoneAnim.set(th.id,{x:nx,y:ny});
+        if(S.terr[j]===ABYSS){S.things[i]=null;S.falls.push({x:bx,y:by,t:0});sfx("drop");}
+        else{S.things[j]=th;S.things[i]=null;sfx("push");}
+        restamp();computeForms();}
+    }
+  }
+  S.undo.push(snap);S.px=nx;S.py=ny;S.moves++;sfx("step");
+  resolveGaze();check();
+}
+function bump(dx,dy){S.anim.px+=dx*.18;S.anim.py+=dy*.18;sfx("bump");}
+function check(){
+  if(S.dead||S.won)return;
+  const i=idx(S.px,S.py),t=S.things[i];
+  const here=t&&existsFor(i,"you");
+  if(here&&t.t==="stone"&&formAt(i)==="door"){S.won=true;win();return;}
+  if(here&&blocks(i)){die(t.t==="wall"?"crush":"crushs");return;}
+  if(S.terr[i]===ABYSS&&!(here&&t.t==="plank")){die("fall");return;}
+}
+const DEATH={fall:"There was nothing under you. (Someone else was looking at that plank.)",crush:"That wall came back while you were inside it.",crushs:"That stone came back while you were inside it."};
+function die(kind){S.dead={kind,t:0};sfx("die");say(DEATH[kind],2600);const s0=S;setTimeout(()=>{if(S!==s0||!S.dead)return;doUndo(true);},900);}
+function doUndo(fromDeath){if(!S)return;if(S.won&&!fromDeath)return;const s=S.undo.pop();if(s){restore(s);}S.dead=null;resolveGaze();check();}
+function restart(){loadLevel(levelIndex);}
+function win(){sfx("win");solved.add(levelIndex);saveSolved();const s0=S;
+  setTimeout(()=>{if(S!==s0)return;const n=levelIndex+1;if(n>=LEVELS.length){showEnd();return;}
+    if(LEVELS[n].ch!==LEVELS[levelIndex].ch)showChapter(LEVELS[n].ch,n);else{loadLevel(n);}},1300);}
+
+// ───────────────────────── RENDER ─────────────────────────
+const cv=document.getElementById("cv"),g=cv.getContext("2d");
+let T=40,DPR=1,OX=0,OY=0,bg=null;
+let F=null; // filings
+function layout(){
+  const stage=document.getElementById("wrap");const maxW=Math.min(stage.clientWidth-16,900),maxH=stage.clientHeight-100;
+  T=Math.max(16,Math.floor(Math.min(maxW/S.w,maxH/S.h,58)));
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  cv.width=S.w*T*DPR;cv.height=S.h*T*DPR;cv.style.width=S.w*T+"px";cv.style.height=S.h*T+"px";
+}
+function rnd(a){let s=a*9301+49297;return()=>{s=(s*9301+49297)%233280;return s/233280;}}
+function buildFilings(){
+  layout();
+  const K=Math.round(Math.max(18,Math.min(44,T*T/48)));
+  const n=S.w*S.h*K;const R=rnd(levelIndex+7);
+  F={n,K,x:new Float32Array(n),y:new Float32Array(n),c:new Int32Array(n),a:new Float32Array(n),l:new Float32Array(n),na:new Float32Array(n),wa:new Float32Array(n),wd:new Float32Array(n)};
+  const wallAt=(x,y)=>!inb(x,y)||(S.things[idx(x,y)]&&S.things[idx(x,y)].t==="wall");
+  for(let y=0;y<S.h;y++)for(let x=0;x<S.w;x++)for(let k=0;k<K;k++){
+    const j=(y*S.w+x)*K+k;const rx=R(),ry=R();F.x[j]=x+rx;F.y[j]=y+ry;F.c[j]=y*S.w+x;F.l[j]=.6+R()*.7;F.na[j]=R()*Math.PI;F.a[j]=F.na[j];
+    // wall tangent: nearest non-wall edge
+    let bd=9,ba=Math.PI/4+(R()-.5)*.25;
+    if(!wallAt(x-1,y)&&rx<bd){bd=rx;ba=Math.PI/2;}
+    if(!wallAt(x+1,y)&&1-rx<bd){bd=1-rx;ba=Math.PI/2;}
+    if(!wallAt(x,y-1)&&ry<bd){bd=ry;ba=0;}
+    if(!wallAt(x,y+1)&&1-ry<bd){bd=1-ry;ba=0;}
+    for(const[dx,dy]of[[-1,-1],[1,-1],[-1,1],[1,1]])if(!wallAt(x+dx,y+dy)){const cx=dx<0?0:1,cy=dy<0?0:1;const d=Math.hypot(rx-cx,ry-cy);if(d<bd){bd=d;ba=Math.atan2(ry-cy,rx-cx)+Math.PI/2;}}
+    F.wa[j]=ba;F.wd[j]=bd;
+  }
+}
+function renderBackground(){
+  bg=document.createElement("canvas");bg.width=cv.width;bg.height=cv.height;const b=bg.getContext("2d");b.scale(DPR,DPR);
+  const W=S.w*T,H=S.h*T;b.fillStyle="#efe7d6";b.fillRect(0,0,W,H);
+  const R=rnd(3);
+  for(let i=0;i<W*H/14;i++){b.fillStyle=`rgba(90,70,40,${R()*.05})`;b.fillRect(R()*W,R()*H,1,1);}
+  // fibres
+  b.strokeStyle="rgba(120,95,60,.06)";b.lineWidth=.6;for(let i=0;i<W*H/900;i++){const x=R()*W,y=R()*H,a=R()*6.28,l=4+R()*10;b.beginPath();b.moveTo(x,y);b.quadraticCurveTo(x+Math.cos(a)*l*.5+R()*3,y+Math.sin(a)*l*.5,x+Math.cos(a)*l,y+Math.sin(a)*l);b.stroke();}
+  // abyss: ink wash
+  b.save();b.filter=`blur(${Math.max(2,T*.12)}px)`;b.fillStyle="#1b2036";
+  for(let y=0;y<S.h;y++)for(let x=0;x<S.w;x++)if(S.terr[idx(x,y)]===ABYSS)b.fillRect(x*T+T*.06,y*T+T*.06,T*.88,T*.88);
+  b.restore();
+  b.save();b.globalCompositeOperation="source-atop";
+  for(let y=0;y<S.h;y++)for(let x=0;x<S.w;x++)if(S.terr[idx(x,y)]===ABYSS){
+    const gr=b.createRadialGradient(x*T+T/2,y*T+T/2,1,x*T+T/2,y*T+T/2,T);gr.addColorStop(0,"rgba(60,70,120,.35)");gr.addColorStop(1,"rgba(0,0,0,0)");b.fillStyle=gr;b.fillRect(x*T-T/2,y*T-T/2,T*2,T*2);
+    for(let k=0;k<5;k++){b.fillStyle=`rgba(230,225,255,${.15+R()*.4})`;b.fillRect(x*T+R()*T,y*T+R()*T,1,1);}}
+  b.restore();
+  // vignette
+  const vg=b.createRadialGradient(W/2,H/2,Math.min(W,H)*.3,W/2,H/2,Math.max(W,H)*.75);vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(80,55,20,.16)");b.fillStyle=vg;b.fillRect(0,0,W,H);
+}
+const COL={ink:[34,30,26],you:[36,72,200],eye:[210,60,30],door:[176,124,20],anchor:[40,72,104],plank:[96,66,36]};
+const buckets=new Map();
+function bucket(col,al){const k=col+"|"+(Math.round(al*20)/20);let b=buckets.get(k);if(!b){b={col,al:Math.round(al*20)/20,pts:[]};buckets.set(k,b);}return b;}
+function angLerp(a,b,t){let d=b-a;d=((d+Math.PI/2)%Math.PI+Math.PI)%Math.PI-Math.PI/2;return a+d*t;}
+function segDist(px,py,ax,ay,bx,by){const vx=bx-ax,vy=by-ay,L=vx*vx+vy*vy||1;let t=((px-ax)*vx+(py-ay)*vy)/L;t=Math.max(0,Math.min(1,t));return Math.hypot(px-ax-vx*t,py-ay-vy*t);}
+
+let time=0,last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;
+  if(S){step(dt);draw();}
+  requestAnimationFrame(frame);
+}
+function step(dt){
+  const k=1-Math.pow(.0005,dt);
+  S.anim.px+=(S.px-S.anim.px)*k;S.anim.py+=(S.py-S.anim.py)*k;
+  for(const[id,p]of S.stoneAnim){const c=S.things.findIndex(t=>t&&t.id===id);if(c<0){S.stoneAnim.delete(id);continue;}const tx=c%S.w,ty=(c/S.w)|0;p.x+=(tx-p.x)*k;p.y+=(ty-p.y)*k;if(Math.abs(tx-p.x)+Math.abs(ty-p.y)<.01)S.stoneAnim.delete(id);}
+  for(const f of S.falls)f.t+=dt;S.falls=S.falls.filter(f=>f.t<1);
+  for(const r of S.ripples)r.t+=dt;S.ripples=S.ripples.filter(r=>r.t<1.6);
+  if(S.dead)S.dead.t+=dt;
+  if(!S.dead&&!S.won){resolveGaze();check();}
+}
+function cellKind(i){ // returns [kind, colorKey]
+  const t=S.things[i];if(!t)return S.terr[i]===ABYSS?["abyss"]:["floor"];
+  const o=S.owner.get(t.id);
+  if(o==="eye")return["ghost",t.t];
+  const tint=o==="you"?"you":null;
+  if(t.t==="wall")return["wall",tint||"ink"];
+  if(t.t==="plank")return["plank",tint||"plank"];
+  const f=formAt(i);return["stone",tint||(f||"ink"),f];
+}
+function draw(){
+  g.setTransform(DPR,0,0,DPR,0,0);
+  g.drawImage(bg,0,0,S.w*T,S.h*T);
+  const kinds=new Array(S.w*S.h);for(let i=0;i<kinds.length;i++)kinds[i]=cellKind(i);
+  // underlays
+  for(let i=0;i<kinds.length;i++){const x=(i%S.w)*T,y=((i/S.w)|0)*T,k=kinds[i];
+    if(k[0]==="wall"){g.fillStyle=k[1]==="you"?"rgba(36,72,200,.13)":"rgba(70,55,35,.11)";g.fillRect(x,y,T,T);}
+    else if(k[0]==="plank"){g.fillStyle=k[1]==="you"?"rgba(150,170,230,.55)":"rgba(196,170,128,.75)";g.fillRect(x+T*.04,y+T*.12,T*.92,T*.76);}
+    else if(k[0]==="ghost"){g.save();g.setLineDash([3,4]);g.strokeStyle="rgba(210,60,30,.45)";g.lineWidth=1;g.strokeRect(x+3.5,y+3.5,T-7,T-7);g.restore();
+      if(k[1]==="plank"){g.fillStyle="rgba(230,200,180,.22)";g.fillRect(x+T*.04,y+T*.12,T*.92,T*.76);}}
+  }
+  // stones (underlay discs, tweened)
+  for(let i=0;i<kinds.length;i++){const k=kinds[i];if(k[0]!=="stone")continue;const t=S.things[i];let x=i%S.w,y=(i/S.w)|0;const a=S.stoneAnim.get(t.id);if(a){x=a.x;y=a.y;}
+    const f=k[2];const cx=x*T+T/2,cy=y*T+T/2;
+    let fill="rgba(120,108,92,.30)";if(f==="door")fill="rgba(222,170,50,.42)";if(f==="anchor")fill="rgba(60,100,140,.30)";if(f==="eye")fill="rgba(220,90,50,.26)";if(k[1]==="you")fill="rgba(36,72,200,.22)";
+    g.fillStyle=fill;g.beginPath();roundRect(g,x*T+T*.08,y*T+T*.08,T*.84,T*.84,T*.22);g.fill();
+    if(f==="door"){const gl=g.createRadialGradient(cx,cy,2,cx,cy,T*.9);gl.addColorStop(0,`rgba(255,210,90,${.25+.12*Math.sin(time*2.5)})`);gl.addColorStop(1,"rgba(255,210,90,0)");g.fillStyle=gl;g.fillRect(cx-T,cy-T,2*T,2*T);}
+  }
+  // form links (show the shape)
+  for(const type of S.present){const fm=S.forms[type];if(!fm)continue;const col={door:"rgba(176,124,20,.55)",anchor:"rgba(40,72,104,.6)",eye:"rgba(210,60,30,.55)"}[type];
+    g.strokeStyle=col;g.lineWidth=Math.max(1.5,T*.06);g.lineCap="round";const set=new Set(fm.cells);
+    for(const c of fm.cells){const x=c%S.w,y=(c/S.w)|0;for(const[dx,dy]of[[1,0],[0,1]])if(set.has(idx(x+dx,y+dy))){const p=stonePos(c),q=stonePos(idx(x+dx,y+dy));g.beginPath();g.moveTo(p[0]*T+T/2,p[1]*T+T/2);g.lineTo(q[0]*T+T/2,q[1]*T+T/2);g.stroke();}}}
+  // filings
+  buckets.clear();
+  const px=S.anim.px+.5,py=S.anim.py+.5;
+  const ge=S.gazeEnd&&S.pointer?S.gazeEnd:null;
+  const bm=S.beam;const bax=bm?bm.sx+.5:0,bay=bm?bm.sy+.5:0,bbx=bm?bm.ex+.5-bm.dir[0]*.5:0,bby=bm?bm.ey+.5-bm.dir[1]*.5:0;
+  const gang=ge?Math.atan2(ge.y-py,ge.x-px):0,bang=bm?Math.atan2(bm.dir[1],bm.dir[0]):0;
+  const L0=T*.16;
+  for(let j=0;j<F.n;j++){const c=F.c[j],k=kinds[c];const fx=F.x[j],fy=F.y[j];let ta,col,al,len=F.l[j]*L0;
+    switch(k[0]){
+      case"abyss":continue;
+      case"floor":{ta=F.na[j];col="ink";al=.16;
+        const dx=fx-px,dy=fy-py,d=Math.hypot(dx,dy);if(d<1.7){ta=angLerp(ta,Math.atan2(dy,dx),Math.min(1,(1.7-d)/.9));al=.16+.35*(1.7-d)/1.7;}
+        if(bm&&segDist(fx,fy,bax,bay,bbx,bby)<.32){ta=bang;col="eye";al=.55;len*=1.3;}
+        if(ge&&segDist(fx,fy,px,py,ge.x,ge.y)<.22){ta=gang;col="you";al=.6;len*=1.3;}
+        break;}
+      case"wall":{ta=F.wa[j];col=k[1];const wd=F.wd[j];al=wd<.25?.85:wd<.6?.5:wd<5?.32:.2;len*=wd>5?.9:1.15;break;}
+      case"ghost":{ta=F.na[j]+time*.3;col="eye";al=.13;len*=.7;break;}
+      case"plank":{const x=c%S.w,y=(c/S.w)|0;const hor=!(inb(x,y-1)&&S.things[idx(x,y-1)]&&S.things[idx(x,y-1)].t==="plank")&&!(inb(x,y+1)&&S.things[idx(x,y+1)]&&S.things[idx(x,y+1)].t==="plank")&&(S.terr[idx(Math.max(0,x-1),y)]!==ABYSS||S.terr[idx(Math.min(S.w-1,x+1),y)]!==ABYSS||(S.things[idx(Math.max(0,x-1),y)]||{}).t==="plank");
+        ta=hor?0:Math.PI/2;ta+=Math.sin(fy*9)*.05;col=k[1];al=.75;break;}
+      case"stone":{let x=c%S.w,y=(c/S.w)|0;const t=S.things[c];const an=S.stoneAnim.get(t.id);let ox=0,oy=0;if(an){ox=an.x-x;oy=an.y-y;}
+        const rx=fx-x-.5,ry=fy-y-.5;const f=k[2];col=k[1];al=.85;
+        if(f==="door"){ta=Math.atan2(ry,rx);}else if(f==="eye"&&S.forms.eye){ta=Math.atan2(S.forms.eye.dir[1],S.forms.eye.dir[0])+rx*.6;}
+        else if(f==="anchor"){const fm=S.forms.anchor.cells;const hz=(fm[1]-fm[0])===1;ta=hz?0:Math.PI/2;}
+        else ta=Math.atan2(ry,rx)+Math.PI/2;
+        if(Math.hypot(rx,ry)>.46){al=.25;}
+        // tween: draw at animated offset
+        if(an){F.a[j]=angLerp(F.a[j],ta,.25);pushSeg(fx+ox,fy+oy,F.a[j],len,col,al);continue;}
+        break;}
+    }
+    F.a[j]=angLerp(F.a[j],ta,.2);pushSeg(fx,fy,F.a[j],len,col,al);
+  }
+  g.lineCap="round";
+  for(const b of buckets.values()){if(!b.pts.length)continue;const[r,gg,bb]=COL[b.col];g.strokeStyle=`rgba(${r},${gg},${bb},${b.al})`;g.lineWidth=Math.max(.8,T*.028);g.beginPath();const p=b.pts;for(let i=0;i<p.length;i+=4){g.moveTo(p[i],p[i+1]);g.lineTo(p[i+2],p[i+3]);}g.stroke();}
+  // eye glyph & beam
+  if(S.forms.eye&&bm){const nx=bm.sx*T+T/2,ny=bm.sy*T+T/2;
+    const ex=bbx*T,ey=bby*T;const gr=g.createLinearGradient(nx,ny,ex,ey);gr.addColorStop(0,"rgba(210,60,30,.28)");gr.addColorStop(1,"rgba(210,60,30,.08)");
+    g.strokeStyle=gr;g.lineWidth=T*.34;g.lineCap="butt";g.beginPath();g.moveTo(nx,ny);g.lineTo(ex,ey);g.stroke();
+    const L=Math.hypot(ex-nx,ey-ny);g.fillStyle="rgba(210,60,30,.7)";for(let s=(time*T*2.2)%(T*.5);s<L;s+=T*.5){const q=s/L;g.beginPath();g.arc(nx+(ex-nx)*q,ny+(ey-ny)*q,T*.035,0,7);g.fill();}
+    drawEye(nx,ny,bang);}
+  // your gaze
+  if(ge){const sx=px*T,sy=py*T,ex=ge.x*T,ey=ge.y*T;g.strokeStyle="rgba(36,72,200,.35)";g.lineWidth=T*.08;g.lineCap="round";g.beginPath();g.moveTo(sx,sy);g.lineTo(ex,ey);g.stroke();
+    const L=Math.hypot(ex-sx,ey-sy);g.fillStyle="rgba(36,72,200,.8)";for(let s=(time*T*2.6)%(T*.4);s<L;s+=T*.4){const q=s/L;g.beginPath();g.arc(sx+(ex-sx)*q,sy+(ey-sy)*q,T*.03,0,7);g.fill();}}
+  // owned-by-you halos
+  for(const c of S.gaze){const x=c%S.w,y=(c/S.w)|0;g.strokeStyle="rgba(36,72,200,.85)";g.lineWidth=2;g.beginPath();roundRect(g,x*T+2,y*T+2,T-4,T-4,T*.18);g.stroke();}
+  // falls
+  for(const f of S.falls){const s=1-f.t;g.fillStyle=`rgba(80,72,60,${s*.6})`;g.beginPath();g.arc(f.x*T+T/2,f.y*T+T/2,T*.38*s,0,7);g.fill();}
+  // ripples (shape moved)
+  for(const r of S.ripples){const col={door:"176,124,20",anchor:"40,72,104",eye:"210,60,30"}[r.type];const a=Math.max(0,1-r.t/1.6);
+    for(const c of r.cells){const x=(c%S.w)*T+T/2,y=((c/S.w)|0)*T+T/2;g.strokeStyle=`rgba(${col},${a})`;g.lineWidth=2;g.beginPath();g.arc(x,y,T*(.4+r.t*.9),0,7);g.stroke();}
+    if(r.from)for(const c of r.from){const x=(c%S.w)*T+T/2,y=((c/S.w)|0)*T+T/2;g.fillStyle=`rgba(${col},${a*.35})`;g.beginPath();g.arc(x,y,T*.45*(1-r.t/1.6),0,7);g.fill();}}
+  // player
+  drawPlayer(px*T,py*T);
+  // pointer reticle
+  if(S.pointer){const x=S.pointer.x*T,y=S.pointer.y*T;g.strokeStyle="rgba(36,72,200,.9)";g.lineWidth=1.5;g.beginPath();g.arc(x,y,T*.14,0,7);g.stroke();g.beginPath();g.moveTo(x-T*.25,y);g.lineTo(x-T*.18,y);g.moveTo(x+T*.18,y);g.lineTo(x+T*.25,y);g.moveTo(x,y-T*.25);g.lineTo(x,y-T*.18);g.moveTo(x,y+T*.18);g.lineTo(x,y+T*.25);g.stroke();}
+}
+function stonePos(c){const t=S.things[c];const a=t&&S.stoneAnim.get(t.id);return a?[a.x,a.y]:[c%S.w,(c/S.w)|0];}
+function pushSeg(fx,fy,a,len,col,al){const b=bucket(col,al);const cx=fx*T,cy=fy*T,dx=Math.cos(a)*len/2,dy=Math.sin(a)*len/2;b.pts.push(cx-dx,cy-dy,cx+dx,cy+dy);}
+function roundRect(c,x,y,w,h,r){c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+function drawEye(x,y,a){g.save();g.translate(x,y);g.rotate(a);const r=T*.36;
+  g.fillStyle="#f6eedd";g.strokeStyle="#7a2412";g.lineWidth=Math.max(1.2,T*.04);g.beginPath();g.moveTo(-r,0);g.quadraticCurveTo(0,-r*.95,r,0);g.quadraticCurveTo(0,r*.95,-r,0);g.fill();g.stroke();
+  g.fillStyle="#d23c1e";g.beginPath();g.arc(r*.25,0,r*.42,0,7);g.fill();g.fillStyle="#2a0d06";g.beginPath();g.arc(r*.32,0,r*.2,0,7);g.fill();g.restore();}
+function drawPlayer(x,y){const d=S.dead;let s=1,al=1;if(d){if(d.kind==="fall"){s=Math.max(.05,1-d.t*1.4);}else{s=1+Math.sin(d.t*40)*.06;}}
+  if(S.won){s=1+Math.min(1,(performance.now()%100000)/1e9);}
+  const r=T*.27*s;
+  g.fillStyle="rgba(0,0,0,.18)";g.beginPath();g.ellipse(x,y+r*.8,r*.9,r*.35,0,0,7);g.fill();
+  const gr=g.createRadialGradient(x-r*.35,y-r*.4,r*.1,x,y,r);gr.addColorStop(0,"#4a5a9a");gr.addColorStop(.5,"#1d2340");gr.addColorStop(1,"#0d1022");
+  g.fillStyle=gr;g.beginPath();g.arc(x,y,r,0,7);g.fill();
+  // pupil toward gaze
+  let ga=0;if(S.pointer){ga=Math.atan2(S.pointer.y*T-y,S.pointer.x*T-x);}
+  g.fillStyle="#9fb4ff";g.beginPath();g.arc(x+Math.cos(ga)*r*.45,y+Math.sin(ga)*r*.45,r*.22,0,7);g.fill();
+}
+
+// ───────────────────────── UI ─────────────────────────
+const hud={name:document.getElementById("lvname"),hint:document.getElementById("hint"),card:document.getElementById("card"),msg:document.getElementById("msg")};
+function updateHud(){const L=LEVELS[levelIndex];hud.name.innerHTML=`<small>${["I","II","III"][L.ch]}·${levelIndex+1}</small>${L.name}`;
+  hud.hint.innerHTML=L.hint+(L.tip?` <span style="color:#7a6d5c">${L.tip}</span>`:"");}
+let msgT=null;function say(s,ms=1800){hud.msg.textContent=s;hud.msg.style.opacity=1;clearTimeout(msgT);msgT=setTimeout(()=>hud.msg.style.opacity=0,ms);}
+function showCard(html,btn,fn){hud.card.innerHTML=html+(btn?`<div><button id=cardBtn>${btn}</button></div>`:"");hud.card.classList.remove("hide");
+  const b=document.getElementById("cardBtn");if(b){b.onclick=()=>{hud.card.classList.add("hide");fn&&fn();};setTimeout(()=>b.focus(),50);}}
+function cardOpen(){return !hud.card.classList.contains("hide");}
+function showTitle(){showCard(`<div><div class=k>a small game about one law</div><h1>Nothing Twice</h1>
+  <p>In this world, nothing can be in two minds, and nothing can be in two places.</p>
+  <p style="font-size:14px;color:#5a5044">Move with <b>arrow keys / WASD</b>. <b>Point</b> to look. <b>Z</b> undo · <b>R</b> restart.</p></div>`,"Begin",()=>showChapter(0,0));}
+function showChapter(ch,lv){const C=CHAPTERS[ch];if(!S)loadLevel(lv);showCard(`<div><div class=k>${C.k}</div><h2>${C.t}</h2><p>${C.p}</p></div>`,"Continue",()=>loadLevel(lv));}
+function showEnd(){showCard(`<div><div class=k>The end</div><h2>Nothing twice</h2>
+  <p>To be looked at is to be taken. To be copied is to be moved. So an Eye is just a shape — and moving where the world is looking is something you can build.</p></div>`,"Levels",showMenu);}
+function showMenu(){let h=`<div><h2>Levels</h2><div id=lvlist>`;LEVELS.forEach((L,i)=>{h+=`<button data-l=${i} class="${solved.has(i)?"done":""}" title="${L.name}">${["I","II","III"][L.ch]}·${i+1}</button>`;});h+=`</div></div>`;
+  showCard(h,"Close",null);hud.card.querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>{hud.card.classList.add("hide");loadLevel(+b.dataset.l);});}
+document.getElementById("bUndo").onclick=()=>doUndo();
+document.getElementById("bReset").onclick=()=>restart();
+document.getElementById("bMenu").onclick=()=>showMenu();
+const KEYS={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0],w:[0,-1],s:[0,1],a:[-1,0],d:[1,0],W:[0,-1],S:[0,1],A:[-1,0],D:[1,0]};
+window.addEventListener("keydown",e=>{
+  if(cardOpen()){if(e.key==="Enter"||e.key===" "){const b=document.getElementById("cardBtn");b&&b.click();e.preventDefault();}return;}
+  if(KEYS[e.key]){e.preventDefault();tryMove(...KEYS[e.key]);}
+  else if(e.key==="z"||e.key==="Z"||e.key==="Backspace"){e.preventDefault();doUndo();}
+  else if(e.key==="r"||e.key==="R"){restart();}
+});
+function setPointerFromEvent(e){const r=cv.getBoundingClientRect();S&&(S.pointer={x:(e.clientX-r.left)/T,y:(e.clientY-r.top)/T});}
+cv.addEventListener("pointermove",e=>{if(e.pointerType==="mouse"||e.buttons)setPointerFromEvent(e);});
+cv.addEventListener("pointerdown",e=>{ensureAudio();setPointerFromEvent(e);});
+cv.addEventListener("pointerleave",e=>{if(e.pointerType==="mouse"&&S)S.pointer=null;});
+document.querySelectorAll("#pad button").forEach(b=>b.addEventListener("pointerdown",e=>{e.preventDefault();ensureAudio();const[dx,dy]=b.dataset.d.split(",").map(Number);tryMove(dx,dy);}));
+if("ontouchstart" in window||navigator.maxTouchPoints>0)document.getElementById("wrap").classList.add("touch");
+window.addEventListener("resize",()=>{if(S){buildFilings();renderBackground();}});
+window.addEventListener("keydown",ensureAudio,{once:true});
+
+// ───────────────────────── SOUND ─────────────────────────
+let AC=null;function ensureAudio(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}}
+function tone(f,d,type="sine",v=.06,slide=0,delay=0){if(!AC)return;const t=AC.currentTime+delay;const o=AC.createOscillator(),gn=AC.createGain();o.type=type;o.frequency.setValueAtTime(f,t);if(slide)o.frequency.exponentialRampToValueAtTime(f*slide,t+d);gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(v,t+.01);gn.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(gn).connect(AC.destination);o.start(t);o.stop(t+d+.02);}
+let lastClaim=0;
+function sfx(k,arg){if(!AC)return;
+  if(k==="step")tone(180+Math.random()*30,.06,"triangle",.03);
+  if(k==="bump")tone(90,.08,"square",.02);
+  if(k==="push")tone(120,.15,"triangle",.06,.7);
+  if(k==="drop")tone(300,.6,"sine",.05,.2);
+  if(k==="claim"){const n=performance.now();if(n-lastClaim>90){lastClaim=n;tone(880+Math.random()*120,.18,"sine",.025);}}
+  if(k==="form"){const base={door:392,anchor:196,eye:330}[arg]||300;[1,1.25,1.5,2].forEach((m,i)=>tone(base*m,.9,"sine",.035,0,i*.06));}
+  if(k==="win"){[523,659,784,1046].forEach((f,i)=>tone(f,.8,"sine",.05,0,i*.1));}
+  if(k==="die")tone(140,.5,"sawtooth",.04,.4);
+}
+
+// ───────────────────────── START ─────────────────────────
+window.NT={get S(){return S},tryMove,loadLevel,setPointer(x,y){S.pointer=x==null?null:{x,y};},resolveGaze,check,LEVELS};
+loadLevel(0);
+showTitle();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
